@@ -21,24 +21,13 @@ from pyspark.sql.types import StructType, StructField, StringType, DoubleType, T
 import os
 
 
-def create_spark_session():
-    """Create and configure Spark session"""
-    return SparkSession.builder \
-        .appName("EmergencyCallsEnrichment") \
-        .config("spark.sql.adaptive.enabled", "true") \
-        .config("spark.sql.adaptive.coalescePartitions.enabled", "true") \
-        .master("local[*]") \
-        .getOrCreate()
-
-
-def detect_double_timestamps(df, timestamp_columns, df_name):
+def detect_double_timestamps(df, timestamp_columns):
     """
     Detect double timestamps with fractional parts and convert to int if no meaningful fractional parts exist
     
     Args:
         df: DataFrame to analyze and potentially convert
         timestamp_columns: List of timestamp column names to check
-        df_name: Name of the dataset for logging
         
     Returns:
         DataFrame with converted columns where appropriate
@@ -89,9 +78,22 @@ def load_emergency_calls(spark, file_path):
     ])
     
     df = spark.read.csv(file_path, header=True, schema=schema)
+    return df
+
+def clean_emergency_calls(df):
+    """
+    Clean and transform emergency calls data
+    
+    Args:
+        df: Raw emergency calls DataFrame
+        
+    Returns:
+        DataFrame with cleaned and transformed emergency calls data
+    """
+    from pyspark.sql.functions import col, expr
     
     # Detect double/float timestamps, convert to int if no fractional parts
-    df = detect_double_timestamps(df, ["ring_timestamp_unix", "pick_up_timestamp_unix"], "Emergency Calls")
+    df = detect_double_timestamps(df, ["ring_timestamp_unix", "pick_up_timestamp_unix"])
     
     # Single transformation: normalize, convert to timestamps, shift timezone, and calculate duration
     df = df.withColumn(
@@ -105,7 +107,7 @@ def load_emergency_calls(spark, file_path):
                expr("unix_timestamp(call_end_timestamp) - unix_timestamp(pickup_timestamp)")
            )
     
-    # Remove rows with null pickup timestamp, call end timestamp, or station
+    # Remove rows with null pickup timestamp, call end timestamp, and station
     df = df.filter(
         col("pick_up_timestamp_unix").isNotNull() &
         col("call_end_timestamp").isNotNull() &
@@ -113,7 +115,6 @@ def load_emergency_calls(spark, file_path):
     )
     
     return df
-
 
 def process_agent_sessions(agent_activity_df):
     """

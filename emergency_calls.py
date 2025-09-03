@@ -13,8 +13,9 @@ This script orchestrates the complete data processing pipeline:
 import os
 import shutil
 import glob
+from pyspark.sql import SparkSession
 from util_functions import (
-    create_spark_session,
+    clean_emergency_calls,
     load_emergency_calls,
     load_agent_activity,
     process_agent_sessions,
@@ -22,6 +23,16 @@ from util_functions import (
     enrich_calls_with_agents,
     analyze_unassigned_calls
 )
+
+
+def create_spark_session():
+    """Create and configure Spark session"""
+    return SparkSession.builder \
+        .appName("EmergencyCallsEnrichment") \
+        .config("spark.sql.adaptive.enabled", "true") \
+        .config("spark.sql.adaptive.coalescePartitions.enabled", "true") \
+        .master("local[*]") \
+        .getOrCreate()
 
 
 def main():
@@ -33,6 +44,10 @@ def main():
         print("Loading emergency calls data...")
         emergency_calls_df = load_emergency_calls(spark, "data/emergency_calls.csv")
         print(f"Loaded {emergency_calls_df.count()} emergency calls")
+        
+        print("Cleaning emergency calls data...")
+        emergency_calls_df = clean_emergency_calls(emergency_calls_df)
+        print(f"Cleaned emergency calls: {emergency_calls_df.count()}")
         
         print("Loading agent activity data...")
         agent_activity_df = load_agent_activity(spark, "data/agent_activity.csv")
